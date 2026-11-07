@@ -5,6 +5,7 @@ import { EventModal } from './components/EventModal';
 import { CodexModal } from './components/CodexModal';
 import { LevelIntroModal } from './components/LevelIntroModal';
 import { LevelCompleteModal } from './components/LevelCompleteModal';
+import { StageCompleteModal } from './components/StageCompleteModal';
 import { GameOverModal } from './components/GameOverModal';
 import { VictoryModal } from './components/VictoryModal';
 import { HistoryLogModal } from './components/HistoryLogModal';
@@ -15,6 +16,7 @@ import { CheckpointMiniGameModal } from './components/CheckpointMiniGameModal';
 import { QuizModal } from './components/QuizModal';
 import { NewspaperPrintModal } from './components/NewspaperPrintModal';
 import { SaveSyncModal } from './components/SaveSyncModal';
+import { DetectiveStalkerOverlay } from './components/DetectiveStalkerOverlay';
 
 import { useGameStore } from './store/useGameStore';
 
@@ -27,6 +29,9 @@ export const App: React.FC = () => {
       {/* Fullscreen pulsing danger vignette when police alert is high */}
       {isHighAlert && <div className="danger-vignette" />}
 
+      {/* Secret Police / Detective Stalker corner overlay with dramatic animations */}
+      <DetectiveStalkerOverlay />
+
       {/* Navigation & Status Header */}
       <Header />
 
@@ -36,19 +41,20 @@ export const App: React.FC = () => {
       </div>
 
       {/* Modals & Dialogs */}
-      <EventModal />
-      <CodexModal />
       <LevelIntroModal />
+      <StageCompleteModal />
       <LevelCompleteModal />
       <GameOverModal />
       <VictoryModal />
+      <EventModal />
+      <CodexModal />
+      <NewspaperPrintModal />
       <HistoryLogModal />
       <HelpModal />
       <AchievementModal />
       <SecretMapModal />
       <CheckpointMiniGameModal />
       <QuizModal />
-      <NewspaperPrintModal />
       <SaveSyncModal />
 
       {/* Atmospheric Footer */}

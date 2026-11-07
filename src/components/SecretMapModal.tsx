@@ -13,6 +13,7 @@ import {
   Coins,
   Radio,
   Users,
+  Flame,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -24,6 +25,8 @@ export const SecretMapModal: React.FC = () => {
     selectedDestinationId,
     selectDestination,
     setActiveTab,
+    mapHotspots,
+    refreshHotspots,
   } = useGameStore();
 
   const baseIdByLevel = [
@@ -84,7 +87,7 @@ export const SecretMapModal: React.FC = () => {
 
         {/* Current Active Route Bar */}
         <div className="bg-[#2a1e16] px-6 py-2.5 border-b border-[#4d3626] flex flex-wrap items-center justify-between text-xs font-mono-code text-[#eedec8] gap-2">
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 flex-wrap">
             <span className="text-emerald-400 font-bold flex items-center space-x-1">
               <Building2 className="w-3.5 h-3.5" />
               <span>XƯỞNG IN (MÀN {currentLevelIndex + 1}):</span>
@@ -102,9 +105,16 @@ export const SecretMapModal: React.FC = () => {
             </span>
           </div>
 
-          <span className="text-[11px] text-[#baa48b] italic">
-            ● Nhấp điểm bất kỳ trên bản đồ để xem tình hình và đổi tuyến giao báo
-          </span>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={refreshHotspots}
+              title="Phái giao liên thám thính và đổi các điểm nóng phong trào ngẫu nhiên"
+              className="px-3 py-1 rounded bg-[#3d2719] hover:bg-[#523724] text-amber-300 text-[11px] font-mono-code border border-[#6b472e] flex items-center space-x-1.5 transition-colors cursor-pointer"
+            >
+              <Flame className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+              <span>Thám Thính Điểm Nóng Mới 🔥</span>
+            </button>
+          </div>
         </div>
 
         {/* Body: Left Graphic Map & Right Details */}
@@ -121,14 +131,14 @@ export const SecretMapModal: React.FC = () => {
             >
               {/* Historical overall courier route dotted trail */}
               <path
-                d="M 82 12 Q 65 18 58 25 T 52 24 T 48 38 T 45 75 T 52 89"
+                d="M 82 12 Q 72 20 62 27 L 42 24 Q 44 32 46 40 Q 45 57 45 74 Q 48 82 52 90"
                 fill="none"
                 stroke="#63452c"
                 strokeWidth="0.8"
                 strokeDasharray="2,2"
               />
               <path
-                d="M 48 15 L 52 24"
+                d="M 44 13 L 42 24"
                 fill="none"
                 stroke="#473121"
                 strokeWidth="0.8"
@@ -138,7 +148,7 @@ export const SecretMapModal: React.FC = () => {
               {/* Active Delivery Route Arc from Current Base to Destination */}
               {currentBase.id !== currentDestination.id && (
                 <path
-                  d={`M ${currentBase.x} ${currentBase.y} Q ${(currentBase.x + currentDestination.x) / 2 + 5} ${(currentBase.y + currentDestination.y) / 2} ${currentDestination.x} ${currentDestination.y}`}
+                  d={`M ${currentBase.x} ${currentBase.y} Q ${(currentBase.x + currentDestination.x) / 2 + 3} ${(currentBase.y + currentDestination.y) / 2} ${currentDestination.x} ${currentDestination.y}`}
                   fill="none"
                   stroke="#f59e0b"
                   strokeWidth="1.2"
@@ -152,6 +162,7 @@ export const SecretMapModal: React.FC = () => {
                 const isSelected = pt.id === selectedPoint.id;
                 const isBase = pt.id === currentBaseId;
                 const isDest = pt.id === selectedDestinationId;
+                const hotspot = mapHotspots ? mapHotspots[pt.id] : undefined;
 
                 return (
                   <g
@@ -162,16 +173,31 @@ export const SecretMapModal: React.FC = () => {
                     {/* Invisible generous hit target so cursor hover NEVER jitters or loses contact */}
                     <circle cx={pt.x} cy={pt.y} r={7} fill="transparent" />
 
-                    {/* Outer animated halo for Active Destination */}
+                    {/* Dynamic Hotspot Pulsing Outer Ring */}
+                    {hotspot && (
+                      <circle
+                        cx={pt.x}
+                        cy={pt.y}
+                        r={5.8}
+                        fill="none"
+                        stroke="#f59e0b"
+                        strokeWidth="1.1"
+                        strokeDasharray="2,2"
+                        className="animate-pulse pointer-events-none"
+                      />
+                    )}
+
+                    {/* Outer gentle pulsating halo for Active Destination (Fixed: NO animate-ping to prevent streak bug) */}
                     {isDest && (
                       <circle
                         cx={pt.x}
                         cy={pt.y}
-                        r={5.5}
+                        r={5.2}
                         fill="none"
                         stroke="#ef4444"
                         strokeWidth="0.9"
-                        className="animate-ping opacity-75 pointer-events-none"
+                        strokeDasharray="1.5,1.5"
+                        className="animate-pulse pointer-events-none"
                       />
                     )}
 
@@ -180,10 +206,11 @@ export const SecretMapModal: React.FC = () => {
                       <circle
                         cx={pt.x}
                         cy={pt.y}
-                        r={6}
+                        r={5.5}
                         fill="none"
                         stroke="#22c55e"
                         strokeWidth="0.9"
+                        strokeDasharray="2,2"
                         className="animate-pulse pointer-events-none"
                       />
                     )}
@@ -206,24 +233,25 @@ export const SecretMapModal: React.FC = () => {
                     <circle
                       cx={pt.x}
                       cy={pt.y}
-                      r={isBase ? 3.4 : isDest ? 3.2 : isSelected ? 3.0 : 2.2}
-                      fill={isBase ? '#15803d' : isDest ? '#dc2626' : isSelected ? '#d97706' : '#92400e'}
-                      stroke={isSelected ? '#fef08a' : '#fdf6ec'}
-                      strokeWidth={isSelected ? 1.0 : 0.6}
+                      r={isBase ? 3.4 : isDest ? 3.2 : isSelected ? 3.0 : hotspot ? 2.8 : 2.2}
+                      fill={isBase ? '#15803d' : isDest ? '#dc2626' : isSelected ? '#d97706' : hotspot ? '#b45309' : '#92400e'}
+                      stroke={isSelected ? '#fef08a' : hotspot ? '#fde047' : '#fdf6ec'}
+                      strokeWidth={isSelected || hotspot ? 1.0 : 0.6}
                       className="transition-colors duration-150 group-hover:fill-amber-400"
                     />
 
-                    {/* Point text label */}
+                    {/* Point text label with dedicated anchor & offset to prevent overlapping */}
                     <text
-                      x={pt.x + 4}
-                      y={pt.y + 1.2}
+                      x={pt.x + (pt.textOffsetX ?? 4.5)}
+                      y={pt.y + (pt.textOffsetY ?? 1.2)}
+                      textAnchor={pt.textAnchor || 'start'}
                       fontSize="3.2"
-                      fill={isBase ? '#86efac' : isDest ? '#fca5a5' : isSelected ? '#fef08a' : '#d4c1ad'}
-                      fontFamily="Playfair Display, serif"
-                      fontWeight={isSelected || isBase || isDest ? 'bold' : 'normal'}
+                      fill={isBase ? '#86efac' : isDest ? '#fca5a5' : isSelected ? '#fef08a' : hotspot ? '#fde047' : '#d4c1ad'}
+                      fontFamily="'Times New Roman', Times, serif"
+                      fontWeight={isSelected || isBase || isDest || hotspot ? 'bold' : 'normal'}
                       className="transition-colors duration-150 group-hover:fill-white select-none pointer-events-none"
                     >
-                      {pt.shortName}
+                      {pt.shortName}{hotspot ? ' 🔥' : ''}
                     </text>
                   </g>
                 );
@@ -232,7 +260,7 @@ export const SecretMapModal: React.FC = () => {
 
             {/* Bottom Legend */}
             <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between text-[10px] font-mono-code text-[#baa48b]">
-              <div className="flex items-center space-x-3">
+              <div className="flex items-center space-x-3 flex-wrap">
                 <span className="flex items-center space-x-1">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 inline-block border border-white"></span>
                   <span>Xưởng In</span>
@@ -242,8 +270,8 @@ export const SecretMapModal: React.FC = () => {
                   <span>Địa Bàn Giao</span>
                 </span>
                 <span className="flex items-center space-x-1">
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-600 inline-block"></span>
-                  <span>Cứ Điểm Khác</span>
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-600 inline-block border border-amber-300"></span>
+                  <span>🔥 Điểm Nóng Thưởng Cao</span>
                 </span>
               </div>
             </div>
@@ -279,6 +307,53 @@ export const SecretMapModal: React.FC = () => {
                   {selectedPoint.role}
                 </p>
               </div>
+
+              {/* Dynamic Hotspot Operational Bulletin */}
+              {mapHotspots && mapHotspots[selectedPoint.id] && (
+                <div className="p-3 bg-gradient-to-br from-[#382215] via-[#26160d] to-[#382215] text-amber-100 rounded-xl border-2 border-amber-500 shadow-md space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono-code font-bold uppercase bg-amber-500/30 text-amber-300 border border-amber-400">
+                      {mapHotspots[selectedPoint.id].tag}
+                    </span>
+                    <span className="text-[10px] text-amber-300 font-mono-code font-bold flex items-center space-x-1">
+                      <Flame className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                      <span>ĐIỂM NÓNG PHONG TRÀO</span>
+                    </span>
+                  </div>
+                  <h4 className="font-vintage-title text-sm font-bold text-amber-200">
+                    {mapHotspots[selectedPoint.id].title}
+                  </h4>
+                  <p className="text-[11.5px] text-[#f7eee3] font-serif leading-relaxed">
+                    {mapHotspots[selectedPoint.id].description}
+                  </p>
+                  {mapHotspots[selectedPoint.id].historicalContext && (
+                    <p className="text-[10.5px] text-amber-300/80 italic font-serif">
+                      💡 {mapHotspots[selectedPoint.id].historicalContext}
+                    </p>
+                  )}
+                  <div className="pt-1.5 border-t border-amber-600/40 grid grid-cols-2 gap-1 text-[10.5px] font-mono-code">
+                    <span className="text-emerald-300 font-bold">
+                      Thưởng Dân: +{mapHotspots[selectedPoint.id].bonus.enlightenment}%
+                    </span>
+                    <span className="text-amber-300 font-bold">
+                      Thưởng Quỹ: +{mapHotspots[selectedPoint.id].bonus.funds}đ
+                    </span>
+                    <span className="text-pink-300 font-bold">
+                      Thưởng Cơ Sở: +{mapHotspots[selectedPoint.id].bonus.cellChance}%
+                    </span>
+                    <span
+                      className={
+                        mapHotspots[selectedPoint.id].bonus.alertRisk >= 0
+                          ? 'text-red-300 font-bold'
+                          : 'text-emerald-300 font-bold'
+                      }
+                    >
+                      Nguy cơ: {mapHotspots[selectedPoint.id].bonus.alertRisk >= 0 ? '+' : ''}
+                      {mapHotspots[selectedPoint.id].bonus.alertRisk}%
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {/* Danger Level & Strategic Bonuses */}
               <div className="p-3 bg-[#ede1ce] rounded-xl border border-[#baa48b] space-y-2">

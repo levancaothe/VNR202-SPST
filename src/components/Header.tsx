@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { useGameStore } from '../store/useGameStore';
 import { GAME_LEVELS } from '../data/gameData';
+import { CAMPAIGN_STAGES } from '../data/stageData';
 import { soundManager } from '../utils/audio';
 import {
   FileText,
@@ -34,6 +35,7 @@ export const Header: React.FC = () => {
     alertLevel,
     secretCells,
     currentLevelIndex,
+    currentStageIndex,
     soundEnabled,
     ambienceEnabled,
     toggleSound,
@@ -48,9 +50,20 @@ export const Header: React.FC = () => {
     setActiveTab,
     recentAchievementToast,
     unlockedAchievementIds,
+    currentModifier,
   } = useGameStore();
 
   const currentLevel = GAME_LEVELS[currentLevelIndex];
+  const currentStages = CAMPAIGN_STAGES[currentLevel.id] || [];
+  const currentStage = currentStages[currentStageIndex] || currentStages[0];
+  const targetEnlightenmentNeeded = Math.min(
+    100,
+    Math.max(
+      20,
+      currentLevel.targetEnlightenment + (currentModifier?.targetEnlightenmentDelta ?? 0)
+    )
+  );
+  const stageTargetNeeded = currentStage?.targetEnlightenmentThreshold ?? targetEnlightenmentNeeded;
   const isHighAlert = alertLevel >= 70;
 
   // Play urgent warning sound once when entering high alert zone
@@ -190,11 +203,57 @@ export const Header: React.FC = () => {
                 1925 - 1945
               </span>
             </div>
-            <p className="text-xs sm:text-sm text-[#c8ad93] font-medium flex items-center justify-center md:justify-start space-x-2 mt-0.5">
-              <span className="text-[#f59e0b] font-bold">Màn {currentLevel.id}:</span>
-              <span className="font-vintage-title font-semibold text-[#fdf6e7]">{currentLevel.title}</span>
-              <span className="text-[#78614e]">({currentLevel.year})</span>
-            </p>
+            <div className="flex flex-wrap items-center justify-center md:justify-start gap-1.5 sm:gap-2 mt-0.5">
+              <p className="text-xs sm:text-sm text-[#c8ad93] font-medium flex items-center space-x-1.5">
+                <span className="text-[#f59e0b] font-bold">Màn {currentLevel.id}/4:</span>
+                <span className="font-vintage-title font-semibold text-[#fdf6e7]">{currentLevel.title}</span>
+                <span className="text-[#78614e]">({currentLevel.year})</span>
+              </p>
+              <span className="text-[#543b27] hidden sm:inline">•</span>
+              <span className="px-2 py-0.5 rounded text-[11px] font-mono-code font-bold bg-[#3b271a] text-[#fcd34d] border border-[#785133] shadow-sm">
+                ẢI {currentStageIndex + 1}/3: {currentStage.title.replace(/^Ải \d+:\s*/, '')}
+              </span>
+            </div>
+
+            {/* Visual 3-Stage Progress Indicator */}
+            <div className="flex items-center justify-center md:justify-start gap-1.5 mt-1.5">
+              {currentStages.map((stg, idx) => {
+                const isPassed = currentStageIndex > idx;
+                const isCurrent = currentStageIndex === idx;
+                return (
+                  <div
+                    key={stg.stageId}
+                    className={`flex items-center space-x-1 px-2 py-0.5 rounded text-[10px] font-mono-code font-semibold border transition-all ${
+                      isPassed
+                        ? 'bg-[#1b4324] text-[#86efac] border-[#22c55e]/50'
+                        : isCurrent
+                        ? 'bg-[#78350f] text-[#fef08a] border-[#f59e0b] ring-1 ring-[#f59e0b]/50 animate-pulse'
+                        : 'bg-[#221812] text-[#78614e] border-[#3d2b1f]'
+                    }`}
+                    title={`${stg.title}: Ngưỡng Lòng Dân cần đạt ${stg.targetEnlightenmentThreshold}%`}
+                  >
+                    <span>{isPassed ? '✓' : isCurrent ? '⚡' : '🔒'}</span>
+                    <span>Ải {stg.stageId}</span>
+                    <span className="opacity-75 text-[9px]">({stg.targetEnlightenmentThreshold}%)</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {currentModifier && (
+              <div className="mt-1 flex items-center justify-center md:justify-start gap-1.5 flex-wrap">
+                <span
+                  className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-mono-code font-bold border ${currentModifier.badgeColor} shadow`}
+                  title={`${currentModifier.name}: ${currentModifier.description} (Mật thám x${currentModifier.alertGrowthMultiplier}, Mục tiêu Lòng dân: ${targetEnlightenmentNeeded}%)`}
+                >
+                  <span>{currentModifier.icon}</span>
+                  <span>Tình thế: {currentModifier.name}</span>
+                </span>
+                <span className="text-[10px] text-[#baa48b] font-mono-code hidden xl:inline">
+                  (Mật thám x{currentModifier.alertGrowthMultiplier} • Mục tiêu {targetEnlightenmentNeeded}%)
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -245,21 +304,24 @@ export const Header: React.FC = () => {
           </div>
 
           {/* Enlightenment Progress Bar */}
-          <div className="col-span-1 sm:col-span-1 bg-[#2a1f18] px-2.5 py-1.5 rounded border border-[#4a3628] shadow-inner" title="Độ giác ngộ của quần chúng. Cần đạt mục tiêu để thắng màn chơi!">
+          <div
+            className="col-span-1 sm:col-span-1 bg-[#2a1f18] px-2.5 py-1.5 rounded border border-[#4a3628] shadow-inner"
+            title={`Lòng dân: ${enlightenment}%. Cần đạt ${stageTargetNeeded}% để qua Ải ${currentStageIndex + 1}! (Mục tiêu toàn màn: ${targetEnlightenmentNeeded}%)`}
+          >
             <div className="flex items-center justify-between text-[10px] text-[#a89582] mb-1">
               <span className="flex items-center space-x-1 font-semibold text-[#fbbf24]">
                 <Radio className="w-3 h-3" />
-                <span>Lòng Dân</span>
+                <span>Ải {currentStageIndex + 1}</span>
               </span>
               <span className="font-mono-code font-bold text-[#fed7aa]">
-                {enlightenment}% <span className="text-[#8c745f]">/ {currentLevel.targetEnlightenment}%</span>
+                {Math.min(100, enlightenment)}% <span className="text-[#8c745f]">/ {stageTargetNeeded}%</span>
               </span>
             </div>
             <div className="w-full bg-[#18110d] rounded-full h-2 overflow-hidden p-0.5 border border-[#3d2b1f]">
               <motion.div
                 className="bg-gradient-to-r from-[#d97706] to-[#f59e0b] h-full rounded-full"
                 initial={{ width: 0 }}
-                animate={{ width: `${Math.min(100, (enlightenment / currentLevel.targetEnlightenment) * 100)}%` }}
+                animate={{ width: `${Math.min(100, (enlightenment / stageTargetNeeded) * 100)}%` }}
                 transition={{ duration: 0.5 }}
               />
             </div>
@@ -288,7 +350,7 @@ export const Header: React.FC = () => {
                   isHighAlert ? 'text-red-300' : 'text-[#e5e7eb]'
                 }`}
               >
-                {alertLevel}%
+                {Math.min(100, alertLevel)}%
               </span>
             </div>
             <div className="w-full bg-[#18110d] rounded-full h-2 overflow-hidden p-0.5 border border-[#3d2b1f]">
@@ -301,7 +363,7 @@ export const Header: React.FC = () => {
                     : 'bg-yellow-500'
                 }`}
                 initial={{ width: 0 }}
-                animate={{ width: `${alertLevel}%` }}
+                animate={{ width: `${Math.min(100, alertLevel)}%` }}
                 transition={{ duration: 0.4 }}
               />
             </div>
@@ -315,7 +377,7 @@ export const Header: React.FC = () => {
           <div className="flex items-center space-x-2">
             <ShieldAlert className="w-5 h-5 text-yellow-300 animate-bounce" />
             <span className="font-bold uppercase tracking-wider text-yellow-200">
-              CẢNH BÁO KHẨN: Mật thám Pháp và chỉ điểm đang lùng sục ráo riết ({alertLevel}%)!
+              CẢNH BÁO KHẨN: Mật thám Pháp và chỉ điểm đang lùng sục ráo riết ({Math.min(100, alertLevel)}%)!
             </span>
           </div>
           <button

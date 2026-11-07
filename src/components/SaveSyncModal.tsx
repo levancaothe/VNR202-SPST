@@ -118,7 +118,7 @@ export const SaveSyncModal: React.FC = () => {
               <span className="font-bold text-emerald-950">
                 Đã tự động lưu trữ trên máy tính này (localStorage):
               </span>{' '}
-              Tiến trình Màn {currentLevelIndex + 1} ({enlightenment}% Lòng Dân, {funds}đ Quỹ, {secretCells} Cơ sở) được lưu vĩnh viễn trên trình duyệt này.
+              Tiến trình Màn {currentLevelIndex + 1} ({Math.min(100, enlightenment)}% Lòng Dân, {funds}đ Quỹ, {secretCells} Cơ sở) được lưu vĩnh viễn trên trình duyệt này.
             </div>
           </div>
         </div>

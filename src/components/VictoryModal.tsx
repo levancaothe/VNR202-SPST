@@ -149,15 +149,15 @@ export const VictoryModal: React.FC = () => {
             onClick={() => useGameStore.getState().setIsPrintCertificateOpen(true)}
             className="flex-1 py-3.5 rounded-xl bg-[#d97706] hover:bg-[#b45309] text-[#1f130a] font-vintage-title text-xs uppercase font-black flex items-center justify-center space-x-2 border border-[#78350f] cursor-pointer shadow-lg transition-transform hover:scale-102"
           >
-            <span>📜 Xuất Bản Báo Kỷ Niệm (In/PDF)</span>
+            <span>📥 Tải Báo Kỷ Niệm (PDF)</span>
           </button>
 
           <button
             onClick={() => setIsCodexOpen(true)}
-            className="flex-1 py-3.5 rounded-xl bg-[#2e1f16] hover:bg-[#422c1f] text-[#fef3c7] font-vintage-title text-xs uppercase font-bold flex items-center justify-center space-x-2 border border-[#6b472e] cursor-pointer transition-colors"
+            className="flex-1 py-3.5 rounded-xl bg-[#2e1f16] hover:bg-[#422c1f] text-[#fef3c7] font-vintage-title text-xs uppercase font-bold flex items-center justify-center space-x-2 border border-[#6b472e] cursor-pointer transition-colors shadow-lg"
           >
             <BookOpen className="w-4 h-4 text-[#f59e0b]" />
-            <span>Kho Tư Liệu</span>
+            <span>Kho Tư Liệu Lịch Sử</span>
           </button>
 
           <motion.button

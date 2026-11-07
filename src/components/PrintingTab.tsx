@@ -50,7 +50,7 @@ export const PrintingTab: React.FC = () => {
   const inkNeeded = Math.round(batches * 8 * selectedBase.inkCostModifier);
   const estimatedCopies = Math.round(batches * 100 * selectedBase.efficiency);
   const estimatedAlertRisk = Math.round(batches * 7 * selectedBase.riskMultiplier);
-  const projectedAlert = alertLevel + estimatedAlertRisk;
+  const projectedAlert = Math.min(100, alertLevel + estimatedAlertRisk);
 
   const canAffordPrint = paper >= paperNeeded && ink >= inkNeeded;
 

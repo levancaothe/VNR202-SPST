@@ -7,10 +7,26 @@ import {
   GAME_ACHIEVEMENTS,
   HISTORICAL_QUIZZES,
   MAP_POINTS,
+  CODEX_DATABASE,
   type GameEvent,
   type ScenarioOption,
+  type ArticleOption,
+  type DistributionTarget,
+  type DistributionMethod,
 } from '../data/gameData';
 import { soundManager } from '../utils/audio';
+import {
+  generateRandomDifficulty,
+  type LevelDifficultyModifier,
+} from '../utils/difficulty';
+import { getRandomArticlesForLevel } from '../data/articlePool';
+import { generateRandomHotspots, type MapHotspot } from '../data/hotspotPool';
+import { getRandomGameEvent } from '../data/eventPool';
+import {
+  generateRandomTargets,
+  generateRandomMethods,
+} from '../data/distributionPool';
+import { CAMPAIGN_STAGES, type StageData } from '../data/stageData';
 
 export interface HistoryItem {
   id: string;
@@ -44,8 +60,18 @@ interface GameState {
 
   // Progression
   currentLevelIndex: number;
+  currentStageIndex: number;
   gameStatus: GameStatus;
   gameOverReason: string;
+  currentModifier: LevelDifficultyModifier | null;
+  completedStageNotification: StageData | null;
+
+  // Dynamic Random Systems
+  currentArticles: ArticleOption[];
+  currentTargets: DistributionTarget[];
+  currentMethods: DistributionMethod[];
+  mapHotspots: Record<string, MapHotspot>;
+  seenEventIds: string[];
 
   // Selections
   activeTab: 'editorial' | 'printing' | 'distribution';
@@ -97,8 +123,13 @@ interface GameState {
 
   resolveEventOption: (option: ScenarioOption) => void;
   closeIntroModal: () => void;
+  closeStageCompleteModal: () => void;
   proceedToNextLevel: () => void;
   restartGame: () => void;
+  regenerateDifficulty: () => void;
+  rerollArticles: () => void;
+  refreshHotspots: () => void;
+  refreshDistributionPool: () => void;
 
   toggleSound: () => void;
   toggleAmbience: () => void;
@@ -138,6 +169,24 @@ const getSavedData = () => {
 export const useGameStore = create<GameState>((set, get) => {
   const initialLevel = GAME_LEVELS[0];
   const saved = getSavedData();
+  const initialModifier: LevelDifficultyModifier =
+    saved?.currentModifier ?? generateRandomDifficulty(saved?.currentLevelIndex ?? 0);
+  const initialArticles: ArticleOption[] =
+    saved?.currentArticles && saved.currentArticles.length > 0
+      ? saved.currentArticles
+      : getRandomArticlesForLevel(initialLevel.id);
+  const initialHotspots: Record<string, MapHotspot> =
+    saved?.mapHotspots && Object.keys(saved.mapHotspots).length > 0
+      ? saved.mapHotspots
+      : generateRandomHotspots(GAME_BASES[0].id);
+  const initialTargets: DistributionTarget[] =
+    saved?.currentTargets && saved.currentTargets.length > 0
+      ? saved.currentTargets
+      : generateRandomTargets();
+  const initialMethods: DistributionMethod[] =
+    saved?.currentMethods && saved.currentMethods.length > 0
+      ? saved.currentMethods
+      : generateRandomMethods();
 
   return {
     paper: saved?.paper ?? initialLevel.startingStats.paper,
@@ -152,14 +201,23 @@ export const useGameStore = create<GameState>((set, get) => {
     stealthUsedCount: saved?.stealthUsedCount ?? 0,
 
     currentLevelIndex: saved?.currentLevelIndex ?? 0,
+    currentStageIndex: saved?.currentStageIndex ?? 0,
     gameStatus: 'intro',
     gameOverReason: '',
+    currentModifier: initialModifier,
+    completedStageNotification: null,
+
+    currentArticles: initialArticles,
+    currentTargets: initialTargets,
+    currentMethods: initialMethods,
+    mapHotspots: initialHotspots,
+    seenEventIds: saved?.seenEventIds ?? [],
 
     activeTab: 'editorial',
-    selectedArticleId: initialLevel.articles[0].id,
+    selectedArticleId: saved?.selectedArticleId ?? initialArticles[0].id,
     selectedBaseId: GAME_BASES[0].id,
-    selectedTargetId: DISTRIBUTION_TARGETS[0].id,
-    selectedMethodId: DISTRIBUTION_METHODS[0].id,
+    selectedTargetId: initialTargets[0].id,
+    selectedMethodId: initialMethods[0].id,
     selectedDestinationId: saved?.selectedDestinationId ?? 'point-hai-phong',
 
     activeEvent: null,
@@ -191,6 +249,42 @@ export const useGameStore = create<GameState>((set, get) => {
       },
     ],
 
+    rerollArticles: () => {
+      soundManager.playPaperRustle();
+      const state = get();
+      const currentLevel = GAME_LEVELS[state.currentLevelIndex];
+      const newArticles = getRandomArticlesForLevel(currentLevel.id);
+      set({
+        currentArticles: newArticles,
+        selectedArticleId: newArticles[0].id,
+      });
+      get().saveProgress();
+    },
+
+    refreshHotspots: () => {
+      const state = get();
+      const newHotspots = generateRandomHotspots(state.selectedBaseId);
+      set({ mapHotspots: newHotspots });
+      get().saveProgress();
+    },
+
+    refreshDistributionPool: () => {
+      const newTargets = generateRandomTargets();
+      const newMethods = generateRandomMethods();
+      set({
+        currentTargets: newTargets,
+        currentMethods: newMethods,
+      });
+      get().saveProgress();
+    },
+
+    regenerateDifficulty: () => {
+      const state = get();
+      const newMod = generateRandomDifficulty(state.currentLevelIndex);
+      set({ currentModifier: newMod });
+      get().saveProgress();
+    },
+
     saveProgress: () => {
       const state = get();
       try {
@@ -206,6 +300,14 @@ export const useGameStore = create<GameState>((set, get) => {
           totalPrints: state.totalPrints,
           stealthUsedCount: state.stealthUsedCount,
           currentLevelIndex: state.currentLevelIndex,
+          currentStageIndex: state.currentStageIndex,
+          currentModifier: state.currentModifier,
+          currentArticles: state.currentArticles,
+          currentTargets: state.currentTargets,
+          currentMethods: state.currentMethods,
+          mapHotspots: state.mapHotspots,
+          seenEventIds: state.seenEventIds,
+          selectedArticleId: state.selectedArticleId,
           selectedDestinationId: state.selectedDestinationId,
           unlockedCodexIds: state.unlockedCodexIds,
           unlockedAchievementIds: state.unlockedAchievementIds,
@@ -334,20 +436,27 @@ export const useGameStore = create<GameState>((set, get) => {
       const currentLevel = GAME_LEVELS[state.currentLevelIndex];
       const base = GAME_BASES.find((b) => b.id === state.selectedBaseId) || GAME_BASES[0];
 
-      const paperCost = Math.round(batches * 10 * base.paperCostModifier);
-      const inkCost = Math.round(batches * 8 * base.inkCostModifier);
+      const modPaper = state.currentModifier?.paperCostModifier ?? 1.0;
+      const modInk = state.currentModifier?.inkCostModifier ?? 1.0;
+      const paperCost = Math.round(batches * 10 * base.paperCostModifier * modPaper);
+      const inkCost = Math.round(batches * 8 * base.inkCostModifier * modInk);
 
       if (state.paper < paperCost || state.ink < inkCost) {
         return {
           success: false,
-          message: `Không đủ nguyên liệu! Cần ${paperCost} Giấy và ${inkCost} Mực.`,
+          message: `Không đủ nguyên liệu! Cần ${paperCost} Giấy và ${inkCost} Mực${
+            state.currentModifier && (modPaper !== 1 || modInk !== 1)
+              ? ` (ảnh hưởng bởi [${state.currentModifier.name}])`
+              : ''
+          }.`,
         };
       }
 
       soundManager.playPrintingPress();
 
       const newCopies = Math.round(batches * 100 * base.efficiency);
-      const addedAlert = Math.round((batches * 7 + Math.random() * 5) * base.riskMultiplier);
+      const modAlertGrowth = state.currentModifier?.alertGrowthMultiplier ?? 1.0;
+      const addedAlert = Math.round((batches * 7 + Math.random() * 5) * base.riskMultiplier * modAlertGrowth);
       const newAlertLevel = Math.min(100, state.alertLevel + addedAlert);
       const newTotalPrints = state.totalPrints + 1;
 
@@ -384,12 +493,13 @@ export const useGameStore = create<GameState>((set, get) => {
         };
       }
 
-      // Check random event trigger
+      // Check random event trigger from dynamic situation pool
       const triggerEvent = Math.random() < 0.38 + newAlertLevel / 200;
       let eventToTrigger: GameEvent | null = null;
-      if (triggerEvent && currentLevel.events.length > 0) {
-        const randIndex = Math.floor(Math.random() * currentLevel.events.length);
-        eventToTrigger = currentLevel.events[randIndex];
+      let updatedSeenEvents = state.seenEventIds;
+      if (triggerEvent) {
+        eventToTrigger = getRandomGameEvent(currentLevel.id, newAlertLevel, state.seenEventIds);
+        updatedSeenEvents = [...state.seenEventIds, eventToTrigger.id].slice(-15);
       }
 
       set({
@@ -399,6 +509,7 @@ export const useGameStore = create<GameState>((set, get) => {
         alertLevel: newAlertLevel,
         totalPrints: newTotalPrints,
         activeEvent: eventToTrigger,
+        seenEventIds: updatedSeenEvents,
         gameStatus: eventToTrigger ? 'event' : state.gameStatus,
         historyLog: updatedHistory,
       });
@@ -421,30 +532,53 @@ export const useGameStore = create<GameState>((set, get) => {
       }
 
       const currentLevel = GAME_LEVELS[state.currentLevelIndex];
+      const activeTargets =
+        state.currentTargets && state.currentTargets.length > 0
+          ? state.currentTargets
+          : DISTRIBUTION_TARGETS;
+      const activeMethods =
+        state.currentMethods && state.currentMethods.length > 0
+          ? state.currentMethods
+          : DISTRIBUTION_METHODS;
       const target =
-        DISTRIBUTION_TARGETS.find((t) => t.id === state.selectedTargetId) ||
-        DISTRIBUTION_TARGETS[0];
+        activeTargets.find((t) => t.id === state.selectedTargetId) ||
+        activeTargets[0];
       const method =
-        DISTRIBUTION_METHODS.find((m) => m.id === state.selectedMethodId) ||
-        DISTRIBUTION_METHODS[0];
+        activeMethods.find((m) => m.id === state.selectedMethodId) ||
+        activeMethods[0];
       const article =
-        currentLevel.articles.find((a) => a.id === state.selectedArticleId) ||
-        currentLevel.articles[0];
+        state.currentArticles.find((a) => a.id === state.selectedArticleId) ||
+        state.currentArticles[0];
       const dest =
         MAP_POINTS.find((p) => p.id === state.selectedDestinationId) ||
         MAP_POINTS[2]; // Mặc định Cảng Hải Phòng
+      const hotspot = state.mapHotspots[dest.id];
+      const hotspotEnlightenment = hotspot?.bonus.enlightenment ?? 0;
+      const hotspotFunds = hotspot?.bonus.funds ?? 0;
+      const hotspotAlert = hotspot?.bonus.alertRisk ?? 0;
+      const hotspotCell = hotspot?.bonus.cellChance ?? 0;
 
-      if (state.funds < method.cost) {
+      const effectiveMethodCost = Math.max(
+        1,
+        method.cost + (state.currentModifier?.fundsDeliveryCostDelta ?? 0)
+      );
+
+      if (state.funds < effectiveMethodCost) {
         return {
           success: false,
-          message: `Không đủ kinh phí giao liên! Cần ${method.cost} đồng quỹ.`,
+          message: `Không đủ kinh phí giao liên! Cần ${effectiveMethodCost} đồng quỹ${
+            state.currentModifier?.fundsDeliveryCostDelta
+              ? ` (lộ phí tăng do [${state.currentModifier.name}])`
+              : ''
+          }.`,
         };
       }
 
       soundManager.playPaperRustle();
 
-      // Check if trigger Checkpoint Inspection mini-game (chance ~25% if alert > 40)
-      const triggerCheckpoint = state.alertLevel > 40 && Math.random() < 0.3;
+      // Check if trigger Checkpoint Inspection mini-game (affected by difficulty modifier)
+      const inspectionChance = 0.28 * (state.currentModifier?.inspectionChanceMultiplier ?? 1.0);
+      const triggerCheckpoint = state.alertLevel > 35 && Math.random() < inspectionChance;
       if (triggerCheckpoint) {
         set({ isInspectionOpen: true });
         return {
@@ -453,46 +587,201 @@ export const useGameStore = create<GameState>((set, get) => {
         };
       }
 
-      // Calculations with Destination bonus
-      const volumeFactor = Math.min(2.5, 0.8 + state.printedCopies / 150);
-      const rawGain =
-        (target.enlightenmentGain + article.statBonus.enlightenment + dest.bonus.enlightenment) *
-        method.reachMultiplier *
-        volumeFactor *
-        0.5;
-      const gainEnlightenment = Math.round(rawGain);
+      // Combined raw detection risk for this distribution dispatch
+      const combinedRisk =
+        target.alertRisk +
+        article.statBonus.alertLevel +
+        dest.bonus.alertRisk +
+        hotspotAlert -
+        method.riskReduction;
 
-      // Alert change
-      const rawAlert =
-        (target.alertRisk + article.statBonus.alertLevel + dest.bonus.alertRisk - method.riskReduction) *
-        0.6;
-      const alertChange = Math.round(Math.max(-5, rawAlert));
+      // Pacing & Risk-to-Enlightenment scaling:
+      // - Với tỉ lệ bị phát hiện thấp (combinedRisk <= 10): tác động thầm lặng, an toàn, tích lũy từng bước
+      //   (mỗi lượt +4% đến +6% Lòng dân). Bắt buộc người chơi phải hoàn thành tuần tự cả 3 Ải của Màn (kéo dài 5-7 lượt in và giao).
+      // - Với tỉ lệ bị phát hiện trung bình (11 <= combinedRisk <= 17): mỗi lượt +7% đến +10% Lòng dân (3-4 lượt).
+      // - Với tỉ lệ bị phát hiện cao (combinedRisk >= 18): Đột phá thần tốc (+14% đến +22% Lòng dân),
+      //   có khả năng vượt ải cấp tốc hoặc hoàn thành màn trong 1-2 lượt thần tốc, nhưng mức nguy hiểm tăng vọt và trạm gác bủa vây!
+      const volumeFactor = Math.min(2.2, 0.7 + state.printedCopies / 180);
+      const modEnlightenment = state.currentModifier?.enlightenmentGainMultiplier ?? 1.0;
+
+      let gainEnlightenment = 0;
+      if (combinedRisk <= 10) {
+        // Safe / Low risk: controlled small gains so each stage takes multiple actions
+        const rawLow =
+          (target.enlightenmentGain * 0.4 +
+            article.statBonus.enlightenment * 0.35 +
+            dest.bonus.enlightenment * 0.5) *
+          method.reachMultiplier *
+          volumeFactor *
+          0.38 *
+          modEnlightenment;
+        gainEnlightenment = Math.max(4, Math.min(6, Math.round(rawLow)));
+      } else if (combinedRisk >= 18) {
+        // High risk / Breakthrough: massive explosion of mass support
+        const rawHigh =
+          (target.enlightenmentGain +
+            article.statBonus.enlightenment +
+            dest.bonus.enlightenment +
+            hotspotEnlightenment) *
+          method.reachMultiplier *
+          volumeFactor *
+          0.52 *
+          modEnlightenment;
+        gainEnlightenment = Math.max(14, Math.min(24, Math.round(rawHigh)));
+      } else {
+        // Balanced / Moderate risk
+        const rawMed =
+          (target.enlightenmentGain * 0.65 +
+            article.statBonus.enlightenment * 0.6 +
+            dest.bonus.enlightenment) *
+          method.reachMultiplier *
+          volumeFactor *
+          0.45 *
+          modEnlightenment;
+        gainEnlightenment = Math.max(7, Math.min(11, Math.round(rawMed)));
+      }
+
+      // Alert change based on risk tier
+      let alertChange = 0;
+      if (combinedRisk <= 8) {
+        alertChange = Math.round(Math.max(-4, combinedRisk * 0.35));
+      } else if (combinedRisk >= 18) {
+        alertChange = Math.round(combinedRisk * 0.95);
+      } else {
+        alertChange = Math.round(combinedRisk * 0.6);
+      }
       const newAlertLevel = Math.max(0, Math.min(100, state.alertLevel + alertChange));
 
       // Secret cell chance
-      const totalCellChance = Math.min(95, target.cellChance + dest.bonus.cellChance);
+      const totalCellChance = Math.min(
+        100,
+        Math.max(0, target.cellChance + dest.bonus.cellChance + hotspotCell)
+      );
       const gainedCell = Math.random() * 100 < totalCellChance;
       const newSecretCells = state.secretCells + (gainedCell ? 1 : 0);
 
       // Funds yield from masses
+      const modFunds = state.currentModifier?.fundsYieldMultiplier ?? 1.0;
       const fundsYield = Math.max(
         0,
         Math.round(
-          target.fundsYield * volumeFactor + (article.statBonus.funds || 0) + dest.bonus.funds
+          (target.fundsYield * volumeFactor +
+            (article.statBonus.funds || 0) +
+            dest.bonus.funds +
+            hotspotFunds) *
+            modFunds
         )
       );
-      const newFunds = state.funds - method.cost + fundsYield;
+      const newFunds = state.funds - effectiveMethodCost + fundsYield;
 
       const newEnlightenment = Math.min(100, state.enlightenment + gainEnlightenment);
       const distributedCount = state.printedCopies;
       const newTotalDistributed = state.totalDistributed + distributedCount;
 
+      // Check Alert level failure
+      if (newAlertLevel >= 100) {
+        soundManager.playAlert();
+        const failureHistory: HistoryItem[] = [
+          {
+            id: String(Date.now()),
+            year: currentLevel.year,
+            text: `Tuyến giao liên của "${method.name}" bị mật thám bám đuôi khi phân phối tài liệu đến "${target.name}". Cảnh binh ập tới thu giữ tài liệu và giăng lưới phong tỏa!`,
+            type: 'danger',
+          },
+          ...state.historyLog,
+        ];
+        set({
+          funds: newFunds,
+          enlightenment: newEnlightenment,
+          alertLevel: 100,
+          secretCells: newSecretCells,
+          printedCopies: 0,
+          totalDistributed: newTotalDistributed,
+          gameStatus: 'game_over',
+          gameOverReason: `Tuyến giao liên của "${method.name}" bị mật thám bám đuôi khi phân phối tài liệu đến "${target.name}". Cảnh binh ập tới thu giữ tài liệu và giăng lưới phong tỏa!`,
+          historyLog: failureHistory,
+        });
+        get().saveProgress();
+        return { success: true, message: 'Đường dây giao liên bị lộ!' };
+      }
+
+      // Check Stage Progression & Breakthrough Mechanics
+      const stages = CAMPAIGN_STAGES[currentLevel.id] || [];
+      const currentStage = stages[state.currentStageIndex] || stages[0];
+      const isLastStage = state.currentStageIndex >= stages.length - 1;
+      const isHighRiskBreakthrough = combinedRisk >= 18;
+
+      const targetEnlightenmentNeeded = Math.min(
+        100,
+        Math.max(
+          20,
+          currentLevel.targetEnlightenment + (state.currentModifier?.targetEnlightenmentDelta ?? 0)
+        )
+      );
+      const effectiveCurrentThreshold = isLastStage
+        ? targetEnlightenmentNeeded
+        : currentStage.targetEnlightenmentThreshold;
+
+      let nextStageIndex = state.currentStageIndex;
+      let completedStageObj: StageData | null = null;
+      let nextStatus: GameStatus = state.gameStatus;
+      let breakthroughText = '';
+
+      if (newEnlightenment >= effectiveCurrentThreshold) {
+        if (isLastStage) {
+          // Final stage reached -> Level complete or overall victory
+          soundManager.playVictory();
+          if (state.currentLevelIndex === GAME_LEVELS.length - 1) {
+            nextStatus = 'victory';
+            get().unlockAchievement('ach-revolution-hero');
+          } else {
+            nextStatus = 'level_complete';
+          }
+        } else {
+          // Cleared current stage (Ải)
+          soundManager.playVictory();
+          if (isHighRiskBreakthrough) {
+            // Breakthrough: check if player reached or exceeded the NEXT stage threshold too!
+            const nextStageCandidate = stages[state.currentStageIndex + 1];
+            const nextStageThreshold =
+              state.currentStageIndex + 1 === stages.length - 1
+                ? targetEnlightenmentNeeded
+                : (nextStageCandidate?.targetEnlightenmentThreshold ?? 100);
+
+            if (nextStageCandidate && newEnlightenment >= nextStageThreshold) {
+              if (state.currentStageIndex + 1 === stages.length - 1) {
+                // Double breakthrough cleared all stages of this level!
+                if (state.currentLevelIndex === GAME_LEVELS.length - 1) {
+                  nextStatus = 'victory';
+                  get().unlockAchievement('ach-revolution-hero');
+                } else {
+                  nextStatus = 'level_complete';
+                }
+                breakthroughText = ' [★ ĐỘT PHÁ THẦN TỐC QUÉT SẠCH CÁC ẢI!]';
+              } else {
+                nextStageIndex = state.currentStageIndex + 2;
+                completedStageObj = nextStageCandidate;
+                breakthroughText = ` [★ ĐỘT PHÁ THẦN TỐC VƯỢT QUA CẢ ${currentStage.title} VÀ ${nextStageCandidate.title}!]`;
+              }
+            } else {
+              nextStageIndex = state.currentStageIndex + 1;
+              completedStageObj = currentStage;
+              breakthroughText = ' [★ ĐỘT PHÁ THẦN TỐC HOÀN THÀNH ẢI!]';
+            }
+          } else {
+            // Safe progression: strictly advance 1 stage at a time
+            nextStageIndex = state.currentStageIndex + 1;
+            completedStageObj = currentStage;
+          }
+        }
+      }
+
       const updatedHistory: HistoryItem[] = [
         {
           id: String(Date.now()),
           year: currentLevel.year,
-          text: `[Tuyến: ${dest.name}] Phát hành ${distributedCount} tờ báo đến "${target.name}" qua cách "${method.name}". Lòng dân +${gainEnlightenment}%, thu về +${fundsYield}đ quyên góp.${gainedCell ? ' Đã phát triển thêm 1 Cơ sở bí mật mới!' : ''}`,
-          type: 'success',
+          text: `[Tuyến: ${dest.name}${hotspot ? ` • ${hotspot.tag}` : ''}] Phát hành ${distributedCount} tờ báo đến "${target.name}" qua cách "${method.name}". Lòng dân +${gainEnlightenment}%, thu về +${fundsYield}đ quyên góp.${completedStageObj ? ` ★ Hoàn thành ${completedStageObj.title}!` : ''}${breakthroughText}${hotspot ? ` (${hotspot.title})` : ''}${gainedCell ? ' Đã phát triển thêm 1 Cơ sở bí mật mới!' : ''}`,
+          type: completedStageObj ? 'success' : 'info',
         },
         ...state.historyLog,
       ];
@@ -505,51 +794,38 @@ export const useGameStore = create<GameState>((set, get) => {
         get().unlockAchievement('ach-volume-press');
       }
 
-      // Check Alert level failure
-      if (newAlertLevel >= 100) {
-        soundManager.playAlert();
-        set({
-          funds: newFunds,
-          enlightenment: newEnlightenment,
-          alertLevel: 100,
-          secretCells: newSecretCells,
-          printedCopies: 0,
-          totalDistributed: newTotalDistributed,
-          gameStatus: 'game_over',
-          gameOverReason: `Tuyến giao liên của "${method.name}" bị mật thám bám đuôi khi phân phối tài liệu đến "${target.name}". Cảnh binh ập tới thu giữ tài liệu và giăng lưới phong tỏa!`,
-          historyLog: updatedHistory,
-        });
-        get().saveProgress();
-        return { success: true, message: 'Đường dây giao liên bị lộ!' };
-      }
-
-      // Check Level completion
-      const isLevelTargetMet = newEnlightenment >= currentLevel.targetEnlightenment;
-      let nextStatus: GameStatus = state.gameStatus;
-
-      if (isLevelTargetMet) {
-        soundManager.playVictory();
-        if (state.currentLevelIndex === GAME_LEVELS.length - 1) {
-          nextStatus = 'victory';
-          get().unlockAchievement('ach-revolution-hero');
-        } else {
-          nextStatus = 'level_complete';
-        }
-      } else {
-        // Trigger potential event
-        const triggerEvent = Math.random() < 0.42;
-        if (triggerEvent && currentLevel.events.length > 0) {
-          const randIndex = Math.floor(Math.random() * currentLevel.events.length);
+      // Check potential dynamic event from event pool (if level not complete)
+      let eventToTrigger: GameEvent | null = null;
+      let updatedSeenEvents = state.seenEventIds;
+      if (nextStatus === 'playing') {
+        const triggerEvent = Math.random() < 0.4;
+        if (triggerEvent) {
+          eventToTrigger = getRandomGameEvent(currentLevel.id, newAlertLevel, state.seenEventIds);
+          updatedSeenEvents = [...state.seenEventIds, eventToTrigger.id].slice(-15);
           nextStatus = 'event';
-          set({ activeEvent: currentLevel.events[randIndex] });
         }
       }
 
-      // Unlock codex for current level if target met
+      // Unlock all corresponding historical codex items for this level and earlier
       const updatedCodex = [...state.unlockedCodexIds];
-      if (isLevelTargetMet && !updatedCodex.includes(currentLevel.codexUnlockId)) {
-        updatedCodex.push(currentLevel.codexUnlockId);
+      if (nextStatus === 'level_complete' || nextStatus === 'victory') {
+        const codexToUnlock = CODEX_DATABASE.filter((c) => c.levelId <= currentLevel.id);
+        for (const item of codexToUnlock) {
+          if (!updatedCodex.includes(item.id)) {
+            updatedCodex.push(item.id);
+          }
+        }
       }
+
+      // Occasionally rotate hotspots after delivery to simulate evolving revolutionary conditions
+      let updatedHotspots = state.mapHotspots;
+      if (Math.random() < 0.35) {
+        updatedHotspots = generateRandomHotspots(state.selectedBaseId);
+      }
+
+      // Rotate reader targets and delivery methods to reflect shifting revolutionary conditions on the streets
+      const freshTargets = generateRandomTargets();
+      const freshMethods = generateRandomMethods();
 
       set({
         funds: newFunds,
@@ -558,7 +834,14 @@ export const useGameStore = create<GameState>((set, get) => {
         secretCells: newSecretCells,
         printedCopies: 0,
         totalDistributed: newTotalDistributed,
+        currentStageIndex: nextStageIndex,
+        completedStageNotification: completedStageObj,
         gameStatus: nextStatus,
+        activeEvent: eventToTrigger,
+        seenEventIds: updatedSeenEvents,
+        mapHotspots: updatedHotspots,
+        currentTargets: freshTargets,
+        currentMethods: freshMethods,
         unlockedCodexIds: updatedCodex,
         historyLog: updatedHistory,
       });
@@ -593,31 +876,22 @@ export const useGameStore = create<GameState>((set, get) => {
         });
       } else {
         soundManager.playPoliceWhistle();
-        const newAlert = Math.min(100, state.alertLevel + 25);
-        const lostCopies = Math.round(state.printedCopies * 0.4);
-        const newCopies = Math.max(0, state.printedCopies - lostCopies);
-
         set({
-          alertLevel: newAlert,
-          printedCopies: newCopies,
+          alertLevel: 100,
           isInspectionOpen: false,
+          gameStatus: 'game_over',
+          gameOverReason:
+            'Giao liên bị toán mật thám Pháp bắt giữ tại trạm kiểm soát khi đang vận chuyển tài liệu bí mật! Phong trào bị đứt gãy đường dây liên lạc.',
           historyLog: [
             {
               id: String(Date.now()),
               year: currentLevel.year,
-              text: `Trạm kiểm soát phát giác nghi vấn! Giao liên phải vứt bỏ ${lostCopies} tờ báo để thoát thân. Mức nguy hiểm tăng +25%!`,
+              text: 'Bị toán mật thám bắt giữ tại trạm kiểm soát! Nhiệm vụ chuyển báo thất bại.',
               type: 'danger',
             },
             ...state.historyLog,
           ],
         });
-
-        if (newAlert >= 100) {
-          set({
-            gameStatus: 'game_over',
-            gameOverReason: 'Giao liên bị bắt tại trạm gác kiểm soát của mật thám Pháp. Tuyến đường phân phối bị đứt gãy!',
-          });
-        }
       }
       get().saveProgress();
     },
@@ -719,8 +993,15 @@ export const useGameStore = create<GameState>((set, get) => {
         return;
       }
 
-      // Check level win
-      const isLevelTargetMet = newEnlightenment >= currentLevel.targetEnlightenment;
+      // Check level win with dynamic modifier
+      const targetEnlightenmentNeeded = Math.min(
+        100,
+        Math.max(
+          20,
+          currentLevel.targetEnlightenment + (state.currentModifier?.targetEnlightenmentDelta ?? 0)
+        )
+      );
+      const isLevelTargetMet = newEnlightenment >= targetEnlightenmentNeeded;
       let nextStatus: GameStatus = 'playing';
 
       if (isLevelTargetMet) {
@@ -752,6 +1033,11 @@ export const useGameStore = create<GameState>((set, get) => {
       set({ gameStatus: 'playing' });
     },
 
+    closeStageCompleteModal: () => {
+      soundManager.playStamp();
+      set({ completedStageNotification: null });
+    },
+
     proceedToNextLevel: () => {
       const state = get();
       const nextIndex = state.currentLevelIndex + 1;
@@ -760,25 +1046,43 @@ export const useGameStore = create<GameState>((set, get) => {
         soundManager.playVictory();
 
         const availableBase = GAME_BASES.find((b) => b.unlockedAtLevel <= nextLevel.id);
+        const newModifier = generateRandomDifficulty(nextIndex);
+        const newArticles = getRandomArticlesForLevel(nextLevel.id);
+        const newTargets = generateRandomTargets();
+        const newMethods = generateRandomMethods();
+        const newBaseId = availableBase ? availableBase.id : state.selectedBaseId;
+        const newHotspots = generateRandomHotspots(newBaseId);
+        const baseAlert = nextLevel.startingStats.alertLevel;
+        const newAlert = Math.max(5, Math.min(80, baseAlert + newModifier.alertStartDelta));
 
         set({
           currentLevelIndex: nextIndex,
+          currentStageIndex: 0,
+          completedStageNotification: null,
+          currentModifier: newModifier,
+          currentArticles: newArticles,
+          selectedArticleId: newArticles[0].id,
+          currentTargets: newTargets,
+          currentMethods: newMethods,
+          selectedTargetId: newTargets[0].id,
+          selectedMethodId: newMethods[0].id,
+          mapHotspots: newHotspots,
+          seenEventIds: [],
           paper: Math.max(state.paper, nextLevel.startingStats.paper),
           ink: Math.max(state.ink, nextLevel.startingStats.ink),
           funds: Math.max(state.funds, nextLevel.startingStats.funds),
           enlightenment: nextLevel.startingStats.enlightenment,
-          alertLevel: nextLevel.startingStats.alertLevel,
+          alertLevel: newAlert,
           secretCells: Math.max(state.secretCells, nextLevel.startingStats.secretCells),
           printedCopies: 0,
-          selectedArticleId: nextLevel.articles[0].id,
-          selectedBaseId: availableBase ? availableBase.id : state.selectedBaseId,
+          selectedBaseId: newBaseId,
           activeTab: 'editorial',
           gameStatus: 'intro',
           historyLog: [
             {
               id: String(Date.now()),
               year: nextLevel.year,
-              text: `Bước sang giai đoạn mới: "${nextLevel.title}" (${nextLevel.year}). Nhiệm vụ: Đạt ${nextLevel.targetEnlightenment}% Lòng Dân Giác Ngộ!`,
+              text: `Bước sang giai đoạn mới: "${nextLevel.title}" (${nextLevel.year}). Tình thế: [${newModifier.name}]. Hệ thống đã tự động mở ra các đề tài bài viết và điểm nóng thời cuộc mới!`,
               type: 'info',
             },
             ...state.historyLog,
@@ -791,27 +1095,47 @@ export const useGameStore = create<GameState>((set, get) => {
     restartGame: () => {
       soundManager.playStamp();
       const firstLevel = GAME_LEVELS[0];
+      const resetModifier = generateRandomDifficulty(0);
+      const resetArticles = getRandomArticlesForLevel(firstLevel.id);
+      const resetTargets = generateRandomTargets();
+      const resetMethods = generateRandomMethods();
+      const resetHotspots = generateRandomHotspots(GAME_BASES[0].id);
+      const resetAlert = Math.max(
+        5,
+        Math.min(80, firstLevel.startingStats.alertLevel + resetModifier.alertStartDelta)
+      );
+
       set({
         paper: firstLevel.startingStats.paper,
         ink: firstLevel.startingStats.ink,
         funds: firstLevel.startingStats.funds,
         enlightenment: firstLevel.startingStats.enlightenment,
-        alertLevel: firstLevel.startingStats.alertLevel,
+        alertLevel: resetAlert,
+        currentModifier: resetModifier,
+        currentArticles: resetArticles,
+        selectedArticleId: resetArticles[0].id,
+        currentTargets: resetTargets,
+        currentMethods: resetMethods,
+        selectedTargetId: resetTargets[0].id,
+        selectedMethodId: resetMethods[0].id,
+        mapHotspots: resetHotspots,
+        seenEventIds: [],
         secretCells: firstLevel.startingStats.secretCells,
         printedCopies: 0,
         totalDistributed: 0,
         currentLevelIndex: 0,
+        currentStageIndex: 0,
+        completedStageNotification: null,
         gameStatus: 'intro',
         gameOverReason: '',
         activeTab: 'editorial',
-        selectedArticleId: firstLevel.articles[0].id,
         selectedBaseId: GAME_BASES[0].id,
         activeEvent: null,
         historyLog: [
           {
             id: String(Date.now()),
             year: firstLevel.year,
-            text: 'Tái lập cơ quan xuất bản bí mật. Tiếng chuông báo chí cách mạng lại vang lên!',
+            text: `Tái lập cơ quan xuất bản bí mật. Tình thế thời cuộc: [${resetModifier.name}] - ${resetModifier.description}`,
             type: 'info',
           },
         ],
@@ -889,6 +1213,12 @@ export const useGameStore = create<GameState>((set, get) => {
         totalPrints: state.totalPrints,
         stealthUsedCount: state.stealthUsedCount,
         currentLevelIndex: state.currentLevelIndex,
+        currentStageIndex: state.currentStageIndex,
+        currentModifier: state.currentModifier,
+        currentArticles: state.currentArticles,
+        selectedArticleId: state.selectedArticleId,
+        mapHotspots: state.mapHotspots,
+        seenEventIds: state.seenEventIds,
         selectedDestinationId: state.selectedDestinationId,
         unlockedCodexIds: state.unlockedCodexIds,
         unlockedAchievementIds: state.unlockedAchievementIds,
@@ -907,6 +1237,7 @@ export const useGameStore = create<GameState>((set, get) => {
           return { success: false, message: 'Mã lưu không hợp lệ hoặc thiếu dữ liệu!' };
         }
         localStorage.setItem(SAVE_KEY, JSON.stringify(parsed));
+        const lvl = GAME_LEVELS[parsed.currentLevelIndex] || GAME_LEVELS[0];
         set({
           paper: parsed.paper ?? 60,
           ink: parsed.ink ?? 50,
@@ -919,6 +1250,24 @@ export const useGameStore = create<GameState>((set, get) => {
           totalPrints: parsed.totalPrints ?? 0,
           stealthUsedCount: parsed.stealthUsedCount ?? 0,
           currentLevelIndex: parsed.currentLevelIndex ?? 0,
+          currentStageIndex: parsed.currentStageIndex ?? 0,
+          completedStageNotification: null,
+          currentModifier: parsed.currentModifier ?? null,
+          currentArticles:
+            parsed.currentArticles && parsed.currentArticles.length > 0
+              ? parsed.currentArticles
+              : getRandomArticlesForLevel(lvl.id),
+          currentTargets:
+            parsed.currentTargets && parsed.currentTargets.length > 0
+              ? parsed.currentTargets
+              : generateRandomTargets(),
+          currentMethods:
+            parsed.currentMethods && parsed.currentMethods.length > 0
+              ? parsed.currentMethods
+              : generateRandomMethods(),
+          selectedArticleId: parsed.selectedArticleId ?? lvl.articles[0].id,
+          mapHotspots: parsed.mapHotspots ?? generateRandomHotspots(GAME_BASES[0].id),
+          seenEventIds: parsed.seenEventIds ?? [],
           selectedDestinationId: parsed.selectedDestinationId ?? 'point-hai-phong',
           unlockedCodexIds: parsed.unlockedCodexIds ?? ['codex-thanh-nien'],
           unlockedAchievementIds: parsed.unlockedAchievementIds ?? [],

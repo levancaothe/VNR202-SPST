@@ -47,7 +47,7 @@ export const LevelCompleteModal: React.FC = () => {
         {/* Title */}
         <div className="text-center pb-3 border-b-2 border-[#543b27]/30 mb-4">
           <span className="text-xs font-mono-code font-bold uppercase text-[#1b5e20]">
-            KẾT THÚC THẮNG LỢI MÀN {currentLevel.id}
+            KẾT THÚC THẮNG LỢI MÀN {currentLevel.id} • VƯỢT QUA CẢ 3 ẢI
           </span>
           <h2 className="font-vintage-title text-2xl font-black text-[#1c120a] uppercase mt-1">
             {currentLevel.title} ({currentLevel.year})

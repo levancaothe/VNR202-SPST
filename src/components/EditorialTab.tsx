@@ -11,21 +11,25 @@ import {
   User,
   Target,
   Sparkles,
+  RefreshCw,
+  Coins,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export const EditorialTab: React.FC = () => {
   const {
     currentLevelIndex,
+    currentArticles,
     selectedArticleId,
     selectArticle,
+    rerollArticles,
     setActiveTab,
   } = useGameStore();
 
   const currentLevel = GAME_LEVELS[currentLevelIndex];
   const activeArticle =
-    currentLevel.articles.find((a) => a.id === selectedArticleId) ||
-    currentLevel.articles[0];
+    currentArticles.find((a) => a.id === selectedArticleId) ||
+    currentArticles[0];
 
   const getTypeBadge = (type: 'radical' | 'moderate' | 'mass') => {
     switch (type) {
@@ -58,14 +62,20 @@ export const EditorialTab: React.FC = () => {
       {/* Left Column: Select Article / Headline */}
       <div className="lg:col-span-5 space-y-4">
         <div className="bg-[#241c16] p-4 rounded-lg border border-[#4a3628] shadow-md">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
             <h3 className="font-vintage-title text-base font-bold text-[#f5ebd7] flex items-center space-x-2">
               <FileText className="w-4 h-4 text-[#e5b358]" />
               <span>1. Chọn Bài Viết & Chủ Đề Cho Số Báo</span>
             </h3>
-            <span className="text-xs font-mono-code text-[#a89582]">
-              {currentLevel.articles.length} bài sẵn sàng
-            </span>
+
+            <button
+              onClick={rerollArticles}
+              className="px-2.5 py-1 rounded bg-[#35251a] hover:bg-[#4d3625] text-[#fcd34d] border border-[#6b4c34] text-[11px] font-mono-code font-bold flex items-center space-x-1.5 cursor-pointer shadow-sm transition-transform hover:scale-105 active:scale-95"
+              title="Hệ thống tự động chọn ngẫu nhiên các bài viết lịch sử khác từ kho tư liệu cách mạng"
+            >
+              <RefreshCw className="w-3 h-3 text-[#f59e0b]" />
+              <span>Đổi Đề Tài Mới</span>
+            </button>
           </div>
 
           <p className="text-xs text-[#b8a28e] leading-relaxed mb-4">
@@ -74,7 +84,7 @@ export const EditorialTab: React.FC = () => {
 
           {/* List of articles */}
           <div className="space-y-3">
-            {currentLevel.articles.map((article) => {
+            {currentArticles.map((article) => {
               const isSelected = article.id === activeArticle.id;
               return (
                 <motion.div
@@ -90,7 +100,14 @@ export const EditorialTab: React.FC = () => {
                 >
                   <div className="flex items-start justify-between gap-2 mb-1.5">
                     <div className="flex-1">
-                      {getTypeBadge(article.type)}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {getTypeBadge(article.type)}
+                        {article.trait && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono-code font-bold bg-[#120d09] text-amber-300 border border-amber-600/50">
+                            {article.trait}
+                          </span>
+                        )}
+                      </div>
                       <h4 className="font-vintage-title text-sm font-bold text-[#faede1] mt-1.5 leading-snug">
                         {article.title}
                       </h4>
@@ -104,7 +121,7 @@ export const EditorialTab: React.FC = () => {
                     "{article.subtitle}"
                   </p>
 
-                  <div className="flex flex-wrap items-center justify-between text-[11px] font-mono-code pt-2 border-t border-[#3a291d] text-[#c4b09c]">
+                  <div className="flex flex-wrap items-center justify-between text-[11px] font-mono-code pt-2 border-t border-[#3a291d] text-[#c4b09c] gap-1">
                     <span className="flex items-center space-x-1">
                       <User className="w-3 h-3 text-[#d97706]" />
                       <span>{article.authorPseudonym}</span>
@@ -116,6 +133,12 @@ export const EditorialTab: React.FC = () => {
                       <span className="text-red-400 font-semibold">
                         +{article.statBonus.alertLevel}% Nguy cơ
                       </span>
+                      {Boolean(article.statBonus.funds) && (
+                        <span className="text-emerald-400 font-semibold flex items-center space-x-0.5">
+                          <Coins className="w-3 h-3 text-emerald-400" />
+                          <span>+{article.statBonus.funds}đ</span>
+                        </span>
+                      )}
                     </div>
                   </div>
                 </motion.div>

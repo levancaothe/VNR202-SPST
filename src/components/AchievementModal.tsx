@@ -53,12 +53,12 @@ export const AchievementModal: React.FC = () => {
             <motion.div
               className="bg-gradient-to-r from-[#d97706] to-[#15803d] h-full"
               initial={{ width: 0 }}
-              animate={{ width: `${(unlockedCount / totalAchievements) * 100}%` }}
+              animate={{ width: `${Math.min(100, (unlockedCount / totalAchievements) * 100)}%` }}
               transition={{ duration: 0.6 }}
             />
           </div>
           <span className="text-xs font-mono-code font-bold text-[#8b2616]">
-            {Math.round((unlockedCount / totalAchievements) * 100)}%
+            {Math.min(100, Math.round((unlockedCount / totalAchievements) * 100))}%
           </span>
         </div>
 

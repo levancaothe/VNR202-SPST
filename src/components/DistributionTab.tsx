@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { useGameStore } from '../store/useGameStore';
 import {
+  GAME_LEVELS,
   DISTRIBUTION_TARGETS,
   DISTRIBUTION_METHODS,
   MAP_POINTS,
 } from '../data/gameData';
+import { CAMPAIGN_STAGES } from '../data/stageData';
 import { soundManager } from '../utils/audio';
 import {
   Send,
@@ -20,6 +22,7 @@ import {
   Map,
   Building2,
   Navigation,
+  Flame,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -27,10 +30,18 @@ export const DistributionTab: React.FC = () => {
   const {
     printedCopies,
     funds,
+    enlightenment,
     selectedTargetId,
     selectedMethodId,
     selectedDestinationId,
+    selectedArticleId,
+    currentArticles,
+    currentTargets,
+    currentMethods,
+    mapHotspots,
     currentLevelIndex,
+    currentStageIndex,
+    currentModifier,
     selectTarget,
     selectMethod,
     distributeNewspaper,
@@ -52,34 +63,109 @@ export const DistributionTab: React.FC = () => {
   const selectedDest =
     MAP_POINTS.find((p) => p.id === selectedDestinationId) || MAP_POINTS[2];
 
+  const targets =
+    currentTargets && currentTargets.length > 0
+      ? currentTargets
+      : DISTRIBUTION_TARGETS;
+  const methods =
+    currentMethods && currentMethods.length > 0
+      ? currentMethods
+      : DISTRIBUTION_METHODS;
+
   const selectedTarget =
-    DISTRIBUTION_TARGETS.find((t) => t.id === selectedTargetId) ||
-    DISTRIBUTION_TARGETS[0];
+    targets.find((t) => t.id === selectedTargetId) || targets[0];
   const selectedMethod =
-    DISTRIBUTION_METHODS.find((m) => m.id === selectedMethodId) ||
-    DISTRIBUTION_METHODS[0];
+    methods.find((m) => m.id === selectedMethodId) || methods[0];
+
+  const activeArticle =
+    currentArticles?.find((a) => a.id === selectedArticleId) || currentArticles?.[0];
+  const articleEnlightenment = activeArticle?.statBonus?.enlightenment || 0;
+  const articleAlert = activeArticle?.statBonus?.alertLevel || 0;
+  const articleFunds = activeArticle?.statBonus?.funds || 0;
+
+  const activeHotspot = mapHotspots ? mapHotspots[selectedDest.id] : undefined;
+  const hotspotEnlightenment = activeHotspot?.bonus?.enlightenment || 0;
+  const hotspotFunds = activeHotspot?.bonus?.funds || 0;
+  const hotspotAlert = activeHotspot?.bonus?.alertRisk || 0;
+  const hotspotCell = activeHotspot?.bonus?.cellChance || 0;
+
+  const totalHotspotCount = mapHotspots ? Object.keys(mapHotspots).length : 0;
 
   const canDistribute = printedCopies > 0 && funds >= selectedMethod.cost;
 
-  // Approximate calculations taking destination bonus into account
-  const volumeFactor = Math.min(2.5, 0.8 + printedCopies / 150);
-  const estEnlightenment = Math.round(
-    (selectedTarget.enlightenmentGain + selectedDest.bonus.enlightenment) *
+  // Accurate calculations taking destination, dynamic hotspot and risk-to-pacing multiplier into account
+  const combinedRisk =
+    selectedTarget.alertRisk +
+    articleAlert +
+    selectedDest.bonus.alertRisk +
+    hotspotAlert -
+    selectedMethod.riskReduction;
+
+  const currentLevel = GAME_LEVELS[currentLevelIndex] || GAME_LEVELS[0];
+  const currentStages = CAMPAIGN_STAGES[currentLevel.id] || [];
+  const currentStage = currentStages[currentStageIndex] || currentStages[0];
+  const targetEnlightenmentNeeded = Math.min(
+    100,
+    Math.max(
+      20,
+      currentLevel.targetEnlightenment + (currentModifier?.targetEnlightenmentDelta ?? 0)
+    )
+  );
+  const stageTargetThreshold =
+    currentStageIndex === currentStages.length - 1
+      ? targetEnlightenmentNeeded
+      : currentStage.targetEnlightenmentThreshold;
+
+  const volumeFactor = Math.min(2.2, 0.7 + printedCopies / 180);
+  let estEnlightenment = 0;
+  if (combinedRisk <= 10) {
+    const rawLow =
+      (selectedTarget.enlightenmentGain * 0.4 +
+        articleEnlightenment * 0.35 +
+        selectedDest.bonus.enlightenment * 0.5) *
       selectedMethod.reachMultiplier *
       volumeFactor *
-      0.5
-  );
+      0.38;
+    estEnlightenment = Math.max(4, Math.min(6, Math.round(rawLow)));
+  } else if (combinedRisk >= 18) {
+    const rawHigh =
+      (selectedTarget.enlightenmentGain +
+        articleEnlightenment +
+        selectedDest.bonus.enlightenment +
+        hotspotEnlightenment) *
+      selectedMethod.reachMultiplier *
+      volumeFactor *
+      0.52;
+    estEnlightenment = Math.max(14, Math.min(24, Math.round(rawHigh)));
+  } else {
+    const rawMed =
+      (selectedTarget.enlightenmentGain * 0.65 +
+        articleEnlightenment * 0.6 +
+        selectedDest.bonus.enlightenment) *
+      selectedMethod.reachMultiplier *
+      volumeFactor *
+      0.45;
+    estEnlightenment = Math.max(7, Math.min(11, Math.round(rawMed)));
+  }
+
   const estFunds = Math.round(
-    selectedTarget.fundsYield * volumeFactor + selectedDest.bonus.funds
+    selectedTarget.fundsYield * volumeFactor +
+      articleFunds +
+      selectedDest.bonus.funds +
+      hotspotFunds
   );
-  const estRisk = Math.round(
-    Math.max(
-      -5,
-      (selectedTarget.alertRisk +
-        selectedDest.bonus.alertRisk -
-        selectedMethod.riskReduction) *
-        0.6
-    )
+
+  let estRisk = 0;
+  if (combinedRisk <= 8) {
+    estRisk = Math.round(Math.max(-4, combinedRisk * 0.35));
+  } else if (combinedRisk >= 18) {
+    estRisk = Math.round(combinedRisk * 0.95);
+  } else {
+    estRisk = Math.round(combinedRisk * 0.6);
+  }
+  const estCellChance = Math.min(
+    100,
+    Math.max(0, selectedTarget.cellChance + selectedDest.bonus.cellChance + hotspotCell)
   );
 
   const handleDistribute = () => {
@@ -119,9 +205,15 @@ export const DistributionTab: React.FC = () => {
                 <span>{currentBase.shortName} (Xưởng In Màn {currentLevelIndex + 1})</span>
               </span>
               <span className="text-[#a89582]">➔</span>
-              <span className="text-amber-400 flex items-center space-x-1">
+              <span className="text-amber-400 flex items-center space-x-1.5 flex-wrap">
                 <Send className="w-4 h-4" />
                 <span>{selectedDest.name} (Địa Bàn Tiếp Nhận)</span>
+                {activeHotspot && (
+                  <span className="ml-1 px-2 py-0.5 rounded text-[10px] font-mono-code font-bold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/60 animate-pulse flex items-center space-x-1">
+                    <Flame className="w-3 h-3 text-amber-400 inline" />
+                    <span>{activeHotspot.tag}</span>
+                  </span>
+                )}
               </span>
             </div>
             <div className="text-xs text-[#c4b09c] mt-0.5 flex items-center space-x-2.5 flex-wrap">
@@ -142,12 +234,42 @@ export const DistributionTab: React.FC = () => {
 
         <button
           onClick={() => setIsMapOpen(true)}
-          className="px-4 py-2 rounded-lg bg-[#8b2616] hover:bg-[#a62f1c] text-white font-mono-code font-bold text-xs uppercase tracking-wider flex items-center space-x-2 shadow cursor-pointer transition-colors shrink-0"
+          className="px-4 py-2.5 rounded-lg bg-[#8b2616] hover:bg-[#a62f1c] text-white font-mono-code font-bold text-xs uppercase tracking-wider flex items-center space-x-2 shadow cursor-pointer transition-colors shrink-0"
         >
           <Map className="w-4 h-4 text-amber-300" />
-          <span>Đổi Điểm Nhận Trên Bản Đồ</span>
+          <span>Bản Đồ Điểm Nhận {totalHotspotCount > 0 ? `(${totalHotspotCount} Điểm Nóng 🔥)` : ''}</span>
         </button>
       </div>
+
+      {/* Dynamic Hotspot Operational Intel Banner */}
+      {activeHotspot && (
+        <div className="lg:col-span-12 -mt-2 p-3.5 rounded-xl border-2 bg-gradient-to-r from-[#382215] via-[#2a1a11] to-[#382215] border-amber-500/70 shadow-lg flex items-start space-x-3">
+          <div className="p-2 rounded-lg bg-amber-950/80 border border-amber-500/50 text-amber-400 shrink-0 mt-0.5">
+            <Flame className="w-5 h-5 animate-pulse text-amber-400" />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center space-x-2 flex-wrap">
+              <span className="text-[10px] font-mono-code font-bold uppercase px-2 py-0.5 rounded bg-amber-900/60 border border-amber-400 text-amber-200">
+                {activeHotspot.tag}
+              </span>
+              <h4 className="font-vintage-title text-sm font-bold text-[#fef3c7]">
+                {activeHotspot.title}
+              </h4>
+            </div>
+            <p className="text-xs text-[#d6c4b2] mt-1 font-serif leading-relaxed">
+              {activeHotspot.description}
+            </p>
+            <div className="flex items-center space-x-3 mt-1.5 text-[11px] font-mono-code flex-wrap">
+              <span className="text-emerald-400 font-bold">Lòng Dân: +{activeHotspot.bonus.enlightenment}%</span>
+              <span className="text-amber-400 font-bold">Quỹ Thưởng: +{activeHotspot.bonus.funds}đ</span>
+              <span className="text-pink-400 font-bold">Cơ Sở Mới: +{activeHotspot.bonus.cellChance}%</span>
+              <span className={activeHotspot.bonus.alertRisk >= 0 ? 'text-red-400 font-bold' : 'text-emerald-400 font-bold'}>
+                Nguy Cơ: {activeHotspot.bonus.alertRisk >= 0 ? `+${activeHotspot.bonus.alertRisk}%` : `${activeHotspot.bonus.alertRisk}%`}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Left Column: Select Target & Delivery Method */}
       <div className="lg:col-span-6 space-y-4">
@@ -165,7 +287,7 @@ export const DistributionTab: React.FC = () => {
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            {DISTRIBUTION_TARGETS.map((target) => {
+            {targets.map((target) => {
               const isSelected = target.id === selectedTarget.id;
               return (
                 <div
@@ -184,9 +306,17 @@ export const DistributionTab: React.FC = () => {
                     </h4>
                   </div>
 
-                  <p className="text-[11px] text-[#b8a28e] leading-snug line-clamp-2 mb-2 font-serif">
+                  <p className="text-[11px] text-[#b8a28e] leading-snug line-clamp-2 mb-1.5 font-serif">
                     {target.description}
                   </p>
+
+                  {target.trait && (
+                    <div className="mb-2">
+                      <span className={`text-[10px] font-mono-code px-1.5 py-0.5 rounded bg-[#100a06] border border-[#4d321d] ${target.traitColor || 'text-amber-400'}`}>
+                        {target.trait}
+                      </span>
+                    </div>
+                  )}
 
                   <div className="flex items-center justify-between text-[10px] font-mono-code pt-1.5 border-t border-[#38281d]">
                     <span className="text-[#a7f3d0] font-bold">
@@ -216,7 +346,7 @@ export const DistributionTab: React.FC = () => {
           </p>
 
           <div className="space-y-2">
-            {DISTRIBUTION_METHODS.map((method) => {
+            {methods.map((method) => {
               const isSelected = method.id === selectedMethod.id;
               return (
                 <div
@@ -237,6 +367,11 @@ export const DistributionTab: React.FC = () => {
                       <p className="text-[11px] text-[#b8a28e] leading-snug font-serif">
                         {method.description}
                       </p>
+                      {method.trait && (
+                        <span className={`text-[10px] font-mono-code mt-0.5 block ${method.traitColor || 'text-amber-400'}`}>
+                          {method.trait}
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -288,6 +423,25 @@ export const DistributionTab: React.FC = () => {
             </span>
           </div>
 
+          {/* Current Ải Objective Card */}
+          <div className="p-3 bg-[#f5ebd7] rounded-xl border-2 border-[#b45309]/50 mb-4 space-y-1.5 shadow-inner">
+            <div className="flex items-center justify-between text-xs font-mono-code">
+              <span className="font-bold text-[#b45309] uppercase flex items-center space-x-1">
+                <Target className="w-3.5 h-3.5 text-[#b45309]" />
+                <span>Nhiệm Vụ Ải {currentStageIndex + 1}/3:</span>
+              </span>
+              <span className="font-bold text-[#1e5c2b] bg-[#e2ede0] px-2 py-0.5 rounded border border-[#22c55e]/40">
+                Tiến độ: {enlightenment}% / {stageTargetThreshold}%
+              </span>
+            </div>
+            <div className="font-vintage-title font-bold text-xs sm:text-sm text-[#1e130a]">
+              {currentStage.title}
+            </div>
+            <p className="font-serif text-[11px] text-[#4d321d] leading-snug">
+              {currentStage.mission}
+            </p>
+          </div>
+
           {/* Plan Summary Matrix */}
           <div className="space-y-2.5 text-xs mb-5 font-serif">
             <div className="flex justify-between py-1.5 border-b border-[#ba9e7d]/60">
@@ -336,7 +490,7 @@ export const DistributionTab: React.FC = () => {
                 <span>Cơ Sở Mới</span>
               </div>
               <div className="text-sm font-bold text-[#3d2516]">
-                ~{selectedTarget.cellChance + selectedDest.bonus.cellChance}%
+                ~{estCellChance}%
               </div>
             </div>
 
@@ -359,6 +513,26 @@ export const DistributionTab: React.FC = () => {
                 {estRisk > 0 ? `+${estRisk}%` : `${estRisk}%`}
               </div>
             </div>
+          </div>
+
+          {/* Tactical Pacing Feedback Banner (Kéo dài màn chơi khi chọn an toàn, ít bị phát hiện) */}
+          <div className="mb-4">
+            {combinedRisk <= 10 ? (
+              <div className="p-2.5 rounded-lg bg-[#e2ede0] border border-emerald-700/40 text-[11px] font-mono-code text-emerald-950 leading-snug">
+                <span className="font-bold text-emerald-900">🛡️ Tuyến An Toàn (Tỉ lệ bị phát hiện thấp):</span>{' '}
+                Thầm lặng, an toàn, tích lũy từng bước (+{estEnlightenment}%/lượt). Bạn cần hoàn thành tuần tự cả 3 Ải của Màn này (kéo dài 5 - 7 lượt in & phát hành).
+              </div>
+            ) : combinedRisk >= 18 ? (
+              <div className="p-2.5 rounded-lg bg-[#f7e2df] border border-red-700/50 text-[11px] font-mono-code text-red-950 leading-snug animate-pulse">
+                <span className="font-bold text-red-800">⚡ Tuyến Liều Lĩnh (Tỉ lệ bị phát hiện cực cao):</span>{' '}
+                Đột phá thần tốc (+{estEnlightenment}%/lượt)! Tiếng vang chấn động có thể giúp nhảy cóc/vượt ải cấp tốc trong 1-2 lượt, nhưng nguy cơ bị mật thám bủa vây và chạm trán trạm kiểm soát rất cao!
+              </div>
+            ) : (
+              <div className="p-2.5 rounded-lg bg-[#f5ede0] border border-[#b89e7e] text-[11px] font-mono-code text-[#4d321d] leading-snug">
+                <span className="font-bold text-[#633f20]">⚖️ Tuyến Cân Bằng:</span>{' '}
+                Nhịp độ giác ngộ vừa phải (+{estEnlightenment}%/lượt), mức nguy hiểm trong tầm kiểm soát (cần khoảng 3 - 4 lượt).
+              </div>
+            )}
           </div>
 
           {/* Execution Button with Dramatic Pulse */}

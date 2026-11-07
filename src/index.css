@@ -2,31 +2,35 @@
 
 @layer base {
   :root {
-    --font-sans: 'Be Vietnam Pro', system-ui, -apple-system, sans-serif;
-    --font-serif: 'Playfair Display', Georgia, serif;
-    --font-typewriter: 'Special Elite', 'Courier Prime', monospace;
-    --font-mono: 'Courier Prime', monospace;
+    --font-sans: 'Times New Roman', Times, serif;
+    --font-serif: 'Times New Roman', Times, serif;
+    --font-typewriter: 'Times New Roman', Times, serif;
+    --font-mono: 'Times New Roman', Times, serif;
+  }
+
+  html,
+  body,
+  button,
+  input,
+  select,
+  textarea {
+    font-family: 'Times New Roman', Times, serif !important;
   }
 
   body {
-    font-family: var(--font-sans);
     background-color: #171310;
     color: #2b2118;
     overflow-x: hidden;
   }
 }
 
-/* Custom Vintage & Sepia Texture Classes */
-.font-vintage-title {
-  font-family: 'Playfair Display', Georgia, serif;
-}
-
-.font-typewriter {
-  font-family: 'Special Elite', 'Courier Prime', monospace;
-}
-
-.font-mono-code {
-  font-family: 'Courier Prime', monospace;
+/* Custom Vintage & Newspaper Typography Classes - All Times New Roman */
+.font-vintage-title,
+.font-typewriter,
+.font-mono-code,
+.font-serif,
+.font-sans {
+  font-family: 'Times New Roman', Times, serif !important;
 }
 
 /* Aged Paper Textures */
